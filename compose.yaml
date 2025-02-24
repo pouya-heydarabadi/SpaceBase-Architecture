@@ -1,0 +1,98 @@
+﻿version: '3.8'
+
+services:
+
+# API
+
+  catalog.api:
+    image: catalog.api
+    build:
+      context: .
+      dockerfile: Src/ProcessUnits/Catalog/Catalog.Api/Dockerfile
+
+  order.webapi:
+    image: order.webapi
+    build:
+      context: .
+      dockerfile: Src/ProcessUnits/Order/Order.WebApi/Dockerfile
+
+  identity.api:
+    image: identity.api
+    build:
+      context: .
+      dockerfile: Src/ProcessUnits/Identity/Identity.Api/Dockerfile
+
+#Redis
+
+  redis_order:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - /path/to/local/order-data:/data
+      - /path/to/local/redis.conf:/usr/local/etc/redis/redis.conf
+    environment:
+      - REDIS_PASSWORD=my-password
+
+  redis_catalog:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6380:6379"
+    volumes:
+      - /path/to/local/catalog-data:/data
+      - /path/to/local/redis.conf:/usr/local/etc/redis/redis.conf
+    environment:
+      - REDIS_PASSWORD=my-password
+
+  redis_identity:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6381:6379"
+    volumes:
+      - /path/to/local/identity-data:/data
+      - /path/to/local/redis.conf:/usr/local/etc/redis/redis.conf
+    environment:
+      - REDIS_PASSWORD=my-password
+
+# SQL Server
+
+  sql_server_order:
+    image: mcr.microsoft.com/mssql/server
+    restart: always
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "admin123!"
+    ports:
+      - 1434:1433
+    volumes:
+      - sqlserver-order:/var/opt/mssql
+
+  sql_server_catalog:
+    image: mcr.microsoft.com/mssql/server
+    restart: always
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "admin123!"
+    ports:
+      - 1435:1433
+    volumes:
+      - sqlserver-catalog:/var/opt/mssql
+
+  sql_server_identity:
+    image: mcr.microsoft.com/mssql/server
+    restart: always
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "admin123!"
+    ports:
+      - 1436:1433
+    volumes:
+      - sqlserver-identity:/var/opt/mssql
+
+volumes:
+  sqlserver-identity:
+  sqlserver-order:
+  sqlserver-catalog:
