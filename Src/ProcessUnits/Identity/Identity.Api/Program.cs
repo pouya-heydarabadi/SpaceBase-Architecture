@@ -1,3 +1,4 @@
+using Identity.Api.Application;
 using Identity.Api.Application.Interfaces;
 using Identity.Api.Infrastructure.Redis;
 using Identity.Api.Infrastructure.SqlServer.Configurations;
@@ -5,6 +6,7 @@ using Identity.Api.Models.Dtos;
 using Identity.Api.Models.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Quartz;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -34,6 +36,26 @@ builder.Services.AddMediatR(options =>
     options.RegisterServicesFromAssembly(typeof(Program).Assembly);
 });
 
+
+#region Quartz
+
+builder.Services.AddQuartz(options =>
+{
+
+    var jobKey = JobKey.Create(nameof(SyncUsersWithDatabaseJob));
+    options
+        .AddJob<SyncUsersWithDatabaseJob>(jobKey)
+        .AddTrigger(trigger =>
+            trigger.ForJob(jobKey)
+                .WithSimpleSchedule(schedule =>
+                    schedule.WithIntervalInMinutes(20).RepeatForever()));
+
+    options.UseMicrosoftDependencyInjectionJobFactory();
+});
+
+builder.Services.AddQuartzHostedService();
+#endregion
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -50,23 +72,26 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/users", async (AppDbContext dbContext) =>
     await dbContext.Users.ToListAsync());
 
-app.MapGet("/users/{id}", async (Guid id, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
+app.MapGet("/users/{phoneNumber}", async (string phoneNumber, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
 {
-    var findUserFromCache = await redisRepository.GetAsync(id.ToString());
-    if (findUserFromCache is null)
+    var findUserFromCache = await redisRepository.GetAsync(phoneNumber.ToString());
+    if (findUserFromCache is not null)
     {
-        var findUserFromDatabase = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
-                                   ?? throw new Exception("User not found");
-        await redisRepository.SetAsync(id.ToString(), findUserFromDatabase);
-        return TypedResults.Ok(findUserFromDatabase);
+        return TypedResults.Ok(findUserFromCache);
+        
     }
-    return TypedResults.Ok(findUserFromCache);
 
+    var findUserFromDatabase = await dbContext.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber)
+                               ?? throw new Exception("User not found");
+    await redisRepository.SortedSetAsync(phoneNumber.ToString(), findUserFromDatabase);
+    return TypedResults.Ok(findUserFromDatabase);
+    
 });
 
-app.MapPost("/users", async (CreateUserDto user, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
+app.MapPost("/users", async (UpdateCreateUserDto user, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
 {
 
+    DateTime now = DateTime.Now;
     User newUser = new User()
     {
         Address = user.Address,
@@ -74,43 +99,71 @@ app.MapPost("/users", async (CreateUserDto user, AppDbContext dbContext, IRedisR
         Name = user.Name,
         Age = user.Age,
         PhoneNumber = user.PhoneNumber,
-        CreatedAt = DateTime.Now,
-        UpdatedAt = DateTime.Now,
+        CreatedAt = now,
+        UpdatedAt = now,
     };
 
     #region Redis
 
-    await redisRepository.SetAsync(user.PhoneNumber, newUser);
+    await redisRepository.SortedSetAsync(user.PhoneNumber, newUser);
 
     #endregion
 
-    dbContext.Users.Add(newUser);
-    await dbContext.SaveChangesAsync();
+    // dbContext.Users.Add(newUser);
+    // await dbContext.SaveChangesAsync();
+    //
+    // User? findUser = await dbContext.Users
+    //     .FirstOrDefaultAsync(x => x.PhoneNumber == user.PhoneNumber);
 
-    User? findUser = await dbContext.Users
-        .FirstOrDefaultAsync(x => x.PhoneNumber == user.PhoneNumber);
-
-    return Results.Created($"/users/{findUser?.Id}", findUser);
+    return Results.Created($"/users/{newUser.Id}", newUser);
 });
 
-app.MapPut("/users/{id}", async (Guid id, User inputUser, AppDbContext dbContext) =>
+app.MapPut("/users/{phoneNumber}", async (string phoneNumber, UpdateCreateUserDto inputUser, IRedisRepository<User> _redisRepository, AppDbContext _dbContext) =>
 {
-    var user = await dbContext.Users.FindAsync(id);
-    if (user is null) return Results.NotFound();
+    
+    var findUserFromCache = await _redisRepository.GetAsync(phoneNumber.ToString());
+    if (findUserFromCache is null)
+    {
+        var findFromDatabase = await _dbContext.Users.FirstOrDefaultAsync(x=>x.PhoneNumber==phoneNumber)??throw new Exception("User not found");
+        await _redisRepository.SortedSetAsync(phoneNumber, findFromDatabase);
+        return TypedResults.Ok(findFromDatabase);
+    }
 
-    user.Name = inputUser.Name;
-    user.Email = inputUser.Email;
-    user.Age = inputUser.Age;
-    user.Address = inputUser.Address;
-    user.PhoneNumber = inputUser.PhoneNumber;
-    await dbContext.SaveChangesAsync();
+
+    else
+    {
+        findUserFromCache.Address = inputUser.Address;
+        findUserFromCache.Name = inputUser.Name;
+        findUserFromCache.Email = inputUser.Email;
+        findUserFromCache.Age = inputUser.Age;
+        findUserFromCache.PhoneNumber = inputUser.PhoneNumber;
+        findUserFromCache.UpdatedAt = DateTime.Now;
+        
+        await _redisRepository.SortedSetAsync(findUserFromCache.PhoneNumber, findUserFromCache);
+        if(phoneNumber != findUserFromCache.PhoneNumber)
+           await _redisRepository.DeleteAsync(phoneNumber);
+        
+        return TypedResults.Ok(findUserFromCache);
+    }
+    
+    
+    // var user = await dbContext.Users.FindAsync(id);
+    // if (user is null) return Results.NotFound();
+    //
+    // user.Name = inputUser.Name;
+    // user.Email = inputUser.Email;
+    // user.Age = inputUser.Age;
+    // user.Address = inputUser.Address;   
+    // user.PhoneNumber = inputUser.PhoneNumber;
+    // user.UpdatedAt = DateTime.Now;
+    // await dbContext.SaveChangesAsync();
 
     return Results.NoContent();
 });
 
-app.MapDelete("/users/{id}", async (Guid id, AppDbContext dbContext) =>
+app.MapDelete("/users/{phoneNumber}", async (string phoneNumber, AppDbContext dbContext) =>
 {
-    var user = await dbContext.Users.FindAsync(id);
+    var user = await dbContext.Users.FindAsync(phoneNumber);
     if (user is null) return Results.NotFound();
 
     dbContext.Users.Remove(user);

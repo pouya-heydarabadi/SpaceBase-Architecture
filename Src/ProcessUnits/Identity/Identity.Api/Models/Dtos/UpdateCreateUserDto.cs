@@ -2,7 +2,7 @@
 
 namespace Identity.Api.Models.Dtos;
 
-public class CreateUserDto
+public class UpdateCreateUserDto
 {
     public string Name { get; set; } = string.Empty;
     [Required, EmailAddress]

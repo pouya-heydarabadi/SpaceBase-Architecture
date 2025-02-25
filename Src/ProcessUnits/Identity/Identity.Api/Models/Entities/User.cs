@@ -4,7 +4,7 @@ namespace Identity.Api.Models.Entities;
 
 public class User
 {
-    public Guid Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
     [Required]
     public string Name { get; set; } = string.Empty;
     [Required, EmailAddress]
