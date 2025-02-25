@@ -9,6 +9,7 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Redis
 builder.Services.AddSingleton<IRedisService>(_ =>
 {
     string? connectionString = builder.Configuration.GetSection("RedisConnectionString").Value;
@@ -17,12 +18,20 @@ builder.Services.AddSingleton<IRedisService>(_ =>
     throw new ApplicationException("Redis service not configured");
 });
 
+// Redis
 builder.Services.AddScoped(typeof(IRedisRepository<>), typeof(RedisRepository<>));
 
 
+// DbContext
 builder.Services.AddDbContextPool<AppDbContext>(options =>
 {
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
+
+// MediatR
+builder.Services.AddMediatR(options =>
+{
+    options.RegisterServicesFromAssembly(typeof(Program).Assembly);
 });
 
 builder.Services.AddOpenApi();
