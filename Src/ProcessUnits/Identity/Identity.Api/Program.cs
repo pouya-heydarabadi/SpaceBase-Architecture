@@ -3,15 +3,13 @@ using Identity.Api.Infrastructure.Redis;
 using Identity.Api.Infrastructure.SqlServer.Configurations;
 using Identity.Api.Models.Dtos;
 using Identity.Api.Models.Entities;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<IRedisService>(config =>
+builder.Services.AddSingleton<IRedisService>(_ =>
 {
     string? connectionString = builder.Configuration.GetSection("RedisConnectionString").Value;
     if (!connectionString.IsNullOrEmpty())
@@ -40,24 +38,24 @@ if (app.Environment.IsDevelopment())
 
 #region Endpoints
 
-app.MapGet("/users", async (AppDbContext _dbContext) =>
-    await _dbContext.Users.ToListAsync());
+app.MapGet("/users", async (AppDbContext dbContext) =>
+    await dbContext.Users.ToListAsync());
 
-app.MapGet("/users/{id}", async (int id, AppDbContext _dbContext, IRedisRepository<User> _redisRepository) =>
+app.MapGet("/users/{id}", async (int id, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
 {
-    var findUserFromCache = await _redisRepository.GetAsync(id.ToString());
+    var findUserFromCache = await redisRepository.GetAsync(id.ToString());
     if (findUserFromCache is null)
     {
-        var findUserFromDatabase = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
+        var findUserFromDatabase = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
                                    ?? throw new Exception("User not found");
-        await _redisRepository.SetAsync(id.ToString(), findUserFromDatabase);
+        await redisRepository.SetAsync(id.ToString(), findUserFromDatabase);
         return TypedResults.Ok(findUserFromDatabase);
     }
     return TypedResults.Ok(findUserFromCache);
 
 });
 
-app.MapPost("/users", async (CreateUserDto user, AppDbContext _dbContext, IRedisRepository<User> _redisRepository) =>
+app.MapPost("/users", async (CreateUserDto user, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
 {
 
     User newUser = new User()
@@ -73,22 +71,22 @@ app.MapPost("/users", async (CreateUserDto user, AppDbContext _dbContext, IRedis
 
     #region Redis
 
-    await _redisRepository.SetAsync(user.PhoneNumber, newUser);
+    await redisRepository.SetAsync(user.PhoneNumber, newUser);
 
     #endregion
 
-    _dbContext.Users.Add(newUser);
-    await _dbContext.SaveChangesAsync();
+    dbContext.Users.Add(newUser);
+    await dbContext.SaveChangesAsync();
 
-    User? findUser = await _dbContext.Users
+    User? findUser = await dbContext.Users
         .FirstOrDefaultAsync(x => x.PhoneNumber == user.PhoneNumber);
 
     return Results.Created($"/users/{findUser?.Id}", findUser);
 });
 
-app.MapPut("/users/{id}", async (int id, User inputUser, AppDbContext _dbContext) =>
+app.MapPut("/users/{id}", async (int id, User inputUser, AppDbContext dbContext) =>
 {
-    var user = await _dbContext.Users.FindAsync(id);
+    var user = await dbContext.Users.FindAsync(id);
     if (user is null) return Results.NotFound();
 
     user.Name = inputUser.Name;
@@ -96,18 +94,18 @@ app.MapPut("/users/{id}", async (int id, User inputUser, AppDbContext _dbContext
     user.Age = inputUser.Age;
     user.Address = inputUser.Address;
     user.PhoneNumber = inputUser.PhoneNumber;
-    await _dbContext.SaveChangesAsync();
+    await dbContext.SaveChangesAsync();
 
     return Results.NoContent();
 });
 
-app.MapDelete("/users/{id}", async (int id, AppDbContext _dbContext) =>
+app.MapDelete("/users/{id}", async (int id, AppDbContext dbContext) =>
 {
-    var user = await _dbContext.Users.FindAsync(id);
+    var user = await dbContext.Users.FindAsync(id);
     if (user is null) return Results.NotFound();
 
-    _dbContext.Users.Remove(user);
-    await _dbContext.SaveChangesAsync();
+    dbContext.Users.Remove(user);
+    await dbContext.SaveChangesAsync();
 
     return Results.NoContent();
 });
