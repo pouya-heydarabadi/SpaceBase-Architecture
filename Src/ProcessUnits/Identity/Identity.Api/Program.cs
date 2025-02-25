@@ -41,7 +41,7 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/users", async (AppDbContext dbContext) =>
     await dbContext.Users.ToListAsync());
 
-app.MapGet("/users/{id}", async (int id, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
+app.MapGet("/users/{id}", async (Guid id, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
 {
     var findUserFromCache = await redisRepository.GetAsync(id.ToString());
     if (findUserFromCache is null)
@@ -84,7 +84,7 @@ app.MapPost("/users", async (CreateUserDto user, AppDbContext dbContext, IRedisR
     return Results.Created($"/users/{findUser?.Id}", findUser);
 });
 
-app.MapPut("/users/{id}", async (int id, User inputUser, AppDbContext dbContext) =>
+app.MapPut("/users/{id}", async (Guid id, User inputUser, AppDbContext dbContext) =>
 {
     var user = await dbContext.Users.FindAsync(id);
     if (user is null) return Results.NotFound();
@@ -99,7 +99,7 @@ app.MapPut("/users/{id}", async (int id, User inputUser, AppDbContext dbContext)
     return Results.NoContent();
 });
 
-app.MapDelete("/users/{id}", async (int id, AppDbContext dbContext) =>
+app.MapDelete("/users/{id}", async (Guid id, AppDbContext dbContext) =>
 {
     var user = await dbContext.Users.FindAsync(id);
     if (user is null) return Results.NotFound();
