@@ -8,7 +8,7 @@ using StackExchange.Redis;
 
 namespace Identity.Api.Application.Jobs;
 
-public sealed class SyncUsersWithDatabaseJob(IRedisService _redisService, IRedisRepository<User> _redisRepository) : IJob
+public sealed class SendDataToMessageQueueJob(IRedisService _redisService, IRedisRepository<User> _redisRepository) : IJob
 {
     private const string UserCreatedTopic = "UserCreated-Topic";
     private const string UserUpdatedTopic = "UserUpdated-Topic";

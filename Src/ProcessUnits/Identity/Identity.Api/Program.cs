@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Confluent.Kafka;
 using Identity.Api.Application;
+using Identity.Api.Application.Events.EventHandlers;
 using Identity.Api.Application.Interfaces;
 using Identity.Api.Application.Jobs;
 using Identity.Api.Infrastructure.Redis;
@@ -39,27 +40,36 @@ builder.Services.AddMediatR(options =>
     options.RegisterServicesFromAssembly(typeof(Program).Assembly);
 });
 
+builder.Services.AddScoped<UserCreatedEventHandler>();
 
 #region Quartz
-
 builder.Services.AddQuartz(options =>
 {
-
-    var jobKey = JobKey.Create(nameof(SyncUsersWithDatabaseJob));
+    // Job 1: SendDataToMessageQueueJob
+    var jobKey1 = JobKey.Create(nameof(SendDataToMessageQueueJob));
     options
-        .AddJob<SyncUsersWithDatabaseJob>(jobKey)
+        .AddJob<SendDataToMessageQueueJob>(jobKey1)
         .AddTrigger(trigger =>
-            trigger.ForJob(jobKey)
+            trigger.ForJob(jobKey1)
                 .WithSimpleSchedule(schedule =>
                     schedule.WithIntervalInMinutes(2).RepeatForever()));
+
+    // Job 2: UserCreatedDatabaseSyncJob
+    var jobKey2 = JobKey.Create(nameof(UserCreatedDatabaseSyncJob));
+    options
+        .AddJob<UserCreatedDatabaseSyncJob>(jobKey2)
+        .AddTrigger(trigger =>
+            trigger.ForJob(jobKey2)
+                .WithSimpleSchedule(schedule =>
+                    schedule.WithIntervalInMinutes(1).RepeatForever()));
 
     options.UseMicrosoftDependencyInjectionJobFactory();
 });
 
 builder.Services.AddQuartzHostedService();
+builder.Services.AddQuartzHostedService();
 #endregion
 
-builder.service.
 builder.Services.AddOpenApi();
 
 var app = builder.Build();

@@ -18,7 +18,7 @@ public sealed class UserCreateInDatabaseHandler(AppDbContext _dbContext) : IRequ
 
             UserCreated userForCreate = requestUserCreatedEvent;
             
-            if(_dbContext.Users.Any(x=> x.Id == requestUserCreatedEvent.Id))
+            if(_dbContext.Users.Any(x=> x.PhoneNumber == requestUserCreatedEvent.PhoneNumber))
                 continue;
                
             User user = new User()
