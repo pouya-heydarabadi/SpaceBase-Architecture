@@ -51,7 +51,7 @@ builder.Services.AddQuartz(options =>
         .AddTrigger(trigger =>
             trigger.ForJob(jobKey)
                 .WithSimpleSchedule(schedule =>
-                    schedule.WithIntervalInMinutes(1).RepeatForever()));
+                    schedule.WithIntervalInMinutes(2).RepeatForever()));
 
     options.UseMicrosoftDependencyInjectionJobFactory();
 });
@@ -59,9 +59,11 @@ builder.Services.AddQuartz(options =>
 builder.Services.AddQuartzHostedService();
 #endregion
 
+builder.service.
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
 
 if (app.Environment.IsDevelopment())
 {
