@@ -15,7 +15,7 @@ public sealed class SendDataToMessageQueueJob(IRedisService _redisService, IRedi
 
     public Task Execute(IJobExecutionContext context)
     {
-        var dateThreshold = DateTime.Now.AddMinutes(-2);
+        var dateThreshold = DateTime.Now.AddMinutes(-10);
         double thresholdTicks = dateThreshold.Ticks;
 
         RedisValue[] findUsers = _redisService.GetDatabase().SortedSetRangeByScoreAsync("users_sorted_set",

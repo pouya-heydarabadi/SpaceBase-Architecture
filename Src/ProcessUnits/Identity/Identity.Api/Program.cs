@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Quartz;
 using Scalar.AspNetCore;
+using Identity.Api.Infrastructure.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +42,8 @@ builder.Services.AddMediatR(options =>
 });
 
 builder.Services.AddScoped<UserCreatedEventHandler>();
+builder.Services.AddScoped<UserUpdatedEventHandler>();
+
 
 #region Quartz
 builder.Services.AddQuartz(options =>
@@ -52,7 +55,7 @@ builder.Services.AddQuartz(options =>
         .AddTrigger(trigger =>
             trigger.ForJob(jobKey1)
                 .WithSimpleSchedule(schedule =>
-                    schedule.WithIntervalInMinutes(2).RepeatForever()));
+                    schedule.WithIntervalInMinutes(1).RepeatForever()));
 
     // Job 2: UserCreatedDatabaseSyncJob
     var userCreatedJobKey = JobKey.Create(nameof(UserCreatedDatabaseSyncJob));
@@ -61,7 +64,7 @@ builder.Services.AddQuartz(options =>
         .AddTrigger(trigger =>
             trigger.ForJob(userCreatedJobKey)
                 .WithSimpleSchedule(schedule =>
-                    schedule.WithIntervalInMinutes(30).RepeatForever()));
+                    schedule.WithIntervalInMinutes(1).RepeatForever()));
 
     // Job 3: UserUpdatedDatabaseSyncJob
     var userUpdatedJobKey = JobKey.Create(nameof(UserUpdatedDatabaseSyncJob));
@@ -70,19 +73,23 @@ builder.Services.AddQuartz(options =>
         .AddTrigger(trigger =>
             trigger.ForJob(userUpdatedJobKey)
                 .WithSimpleSchedule(schedule =>
-                    schedule.WithIntervalInMinutes(30).RepeatForever()));
+                    schedule.WithIntervalInMinutes(1).RepeatForever()));
 
     options.UseMicrosoftDependencyInjectionJobFactory();
 });
 
 builder.Services.AddQuartzHostedService();
-builder.Services.AddQuartzHostedService();
 #endregion
 
 builder.Services.AddOpenApi();
 
+// Configure Serilog
+builder.ConfigureSerilog();
+
 var app = builder.Build();
 
+// Add correlation ID middleware
+app.UseMiddleware<CorrelationIdMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -114,8 +121,6 @@ app.MapGet("/users/{phoneNumber}", async (string phoneNumber, AppDbContext dbCon
 
 app.MapPost("/users", async (UpdateCreateUserDto user, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
 {
-
-    
     DateTime now = DateTime.Now;
     User newUser = new User()
     {
@@ -128,65 +133,49 @@ app.MapPost("/users", async (UpdateCreateUserDto user, AppDbContext dbContext, I
         UpdatedAt = now,
     };
     
-    #region Redis
-
+    // Save to database
+    await dbContext.Users.AddAsync(newUser);
+    await dbContext.SaveChangesAsync();
+    
+    // Save to Redis
     await redisRepository.SortedSetAsync(user.PhoneNumber, newUser);
-
-    #endregion
     
-    return Results.Created($"/users/{newUser.Id}", newUser);
+    return Results.Created($"/users/{newUser.PhoneNumber}", newUser);
 });
 
-app.MapPut("/users/{phoneNumber}", async (string phoneNumber, UpdateCreateUserDto inputUser, IRedisRepository<User> _redisRepository, AppDbContext _dbContext) =>
+app.MapPut("/users/{phoneNumber}", async (string phoneNumber, UpdateCreateUserDto inputUser, IRedisRepository<User> redisRepository, AppDbContext dbContext) =>
 {
-    
-    var findUserFromCache = await _redisRepository.GetAsync(phoneNumber.ToString());
-    if (findUserFromCache is null)
-    {
-        var findFromDatabase = await _dbContext.Users.FirstOrDefaultAsync(x=>x.PhoneNumber==phoneNumber)??throw new Exception("User not found");
-        await _redisRepository.SortedSetAsync(phoneNumber, findFromDatabase);
-        return TypedResults.Ok(findFromDatabase);
-    }
-
-
-    else
-    {
-        findUserFromCache.Address = inputUser.Address;
-        findUserFromCache.Name = inputUser.Name;
-        findUserFromCache.Email = inputUser.Email;
-        findUserFromCache.Age = inputUser.Age;
-        findUserFromCache.PhoneNumber = inputUser.PhoneNumber;
-        findUserFromCache.UpdatedAt = DateTime.Now;
-        
-        await _redisRepository.SortedSetAsync(findUserFromCache.PhoneNumber, findUserFromCache);
-        if(phoneNumber != findUserFromCache.PhoneNumber)
-           await _redisRepository.DeleteAsync(phoneNumber);
-        
-        return TypedResults.Ok(findUserFromCache);
-    }
-    
-    
-    // var user = await dbContext.Users.FindAsync(id);
-    // if (user is null) return Results.NotFound();
-    //
-    // user.Name = inputUser.Name;
-    // user.Email = inputUser.Email;
-    // user.Age = inputUser.Age;
-    // user.Address = inputUser.Address;   
-    // user.PhoneNumber = inputUser.PhoneNumber;
-    // user.UpdatedAt = DateTime.Now;
-    // await dbContext.SaveChangesAsync();
-
-    return Results.NoContent();
-});
-
-app.MapDelete("/users/{phoneNumber}", async (string phoneNumber, AppDbContext dbContext) =>
-{
-    var user = await dbContext.Users.FindAsync(phoneNumber);
+    // Find user in database
+    var user = await dbContext.Users.FirstOrDefaultAsync(x => x.PhoneNumber == phoneNumber);
     if (user is null) return Results.NotFound();
 
+    // Update user properties
+    user.Address = inputUser.Address;
+    user.Name = inputUser.Name;
+    user.Email = inputUser.Email;
+    user.Age = inputUser.Age;
+    user.PhoneNumber = inputUser.PhoneNumber;
+    user.UpdatedAt = DateTime.Now;
+
+    // Update Redis
+    await redisRepository.SortedSetAsync(user.PhoneNumber, user);
+    if (phoneNumber != user.PhoneNumber)
+        await redisRepository.DeleteAsync(phoneNumber);
+
+    return Results.Ok(user);
+});
+
+app.MapDelete("/users/{phoneNumber}", async (string phoneNumber, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
+{
+    var user = await dbContext.Users.FirstOrDefaultAsync(x => x.PhoneNumber == phoneNumber);
+    if (user is null) return Results.NotFound();
+
+    // Remove from database
     dbContext.Users.Remove(user);
     await dbContext.SaveChangesAsync();
+
+    // Remove from Redis
+    await redisRepository.DeleteAsync(phoneNumber);
 
     return Results.NoContent();
 });
