@@ -55,13 +55,22 @@ builder.Services.AddQuartz(options =>
                     schedule.WithIntervalInMinutes(2).RepeatForever()));
 
     // Job 2: UserCreatedDatabaseSyncJob
-    var jobKey2 = JobKey.Create(nameof(UserCreatedDatabaseSyncJob));
+    var userCreatedJobKey = JobKey.Create(nameof(UserCreatedDatabaseSyncJob));
     options
-        .AddJob<UserCreatedDatabaseSyncJob>(jobKey2)
+        .AddJob<UserCreatedDatabaseSyncJob>(userCreatedJobKey)
         .AddTrigger(trigger =>
-            trigger.ForJob(jobKey2)
+            trigger.ForJob(userCreatedJobKey)
                 .WithSimpleSchedule(schedule =>
-                    schedule.WithIntervalInMinutes(1).RepeatForever()));
+                    schedule.WithIntervalInMinutes(30).RepeatForever()));
+
+    // Job 3: UserUpdatedDatabaseSyncJob
+    var userUpdatedJobKey = JobKey.Create(nameof(UserUpdatedDatabaseSyncJob));
+    options
+        .AddJob<UserUpdatedDatabaseSyncJob>(userUpdatedJobKey)
+        .AddTrigger(trigger =>
+            trigger.ForJob(userUpdatedJobKey)
+                .WithSimpleSchedule(schedule =>
+                    schedule.WithIntervalInMinutes(30).RepeatForever()));
 
     options.UseMicrosoftDependencyInjectionJobFactory();
 });
