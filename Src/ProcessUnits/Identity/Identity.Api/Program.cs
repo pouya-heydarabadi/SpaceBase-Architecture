@@ -1,5 +1,8 @@
+using System.Text.Json;
+using Confluent.Kafka;
 using Identity.Api.Application;
 using Identity.Api.Application.Interfaces;
+using Identity.Api.Application.Jobs;
 using Identity.Api.Infrastructure.Redis;
 using Identity.Api.Infrastructure.SqlServer.Configurations;
 using Identity.Api.Models.Dtos;
@@ -48,7 +51,7 @@ builder.Services.AddQuartz(options =>
         .AddTrigger(trigger =>
             trigger.ForJob(jobKey)
                 .WithSimpleSchedule(schedule =>
-                    schedule.WithIntervalInMinutes(20).RepeatForever()));
+                    schedule.WithIntervalInMinutes(1).RepeatForever()));
 
     options.UseMicrosoftDependencyInjectionJobFactory();
 });
@@ -91,6 +94,7 @@ app.MapGet("/users/{phoneNumber}", async (string phoneNumber, AppDbContext dbCon
 app.MapPost("/users", async (UpdateCreateUserDto user, AppDbContext dbContext, IRedisRepository<User> redisRepository) =>
 {
 
+    
     DateTime now = DateTime.Now;
     User newUser = new User()
     {
@@ -102,19 +106,13 @@ app.MapPost("/users", async (UpdateCreateUserDto user, AppDbContext dbContext, I
         CreatedAt = now,
         UpdatedAt = now,
     };
-
+    
     #region Redis
 
     await redisRepository.SortedSetAsync(user.PhoneNumber, newUser);
 
     #endregion
-
-    // dbContext.Users.Add(newUser);
-    // await dbContext.SaveChangesAsync();
-    //
-    // User? findUser = await dbContext.Users
-    //     .FirstOrDefaultAsync(x => x.PhoneNumber == user.PhoneNumber);
-
+    
     return Results.Created($"/users/{newUser.Id}", newUser);
 });
 

@@ -2,7 +2,7 @@
 
 namespace Identity.Api.Application.Events.Events;
 
-public sealed record UserCreated( Guid Id, 
+public record UserCreated( Guid Id, 
      string Name, 
      string Email, 
      int Age, 
